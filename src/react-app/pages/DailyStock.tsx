@@ -85,9 +85,9 @@ export default function DailyStockPage() {
       });
       setShowForm(false);
       fetchRecords();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving record:", error);
-      alert("Failed to save record");
+      alert("Failed to save record: " + (error.message || JSON.stringify(error)));
     }
   };
 

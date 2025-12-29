@@ -7,7 +7,6 @@ import SalesPage from "@/react-app/pages/Sales";
 import ReportsPage from "@/react-app/pages/Reports";
 import DailyStockPage from "@/react-app/pages/DailyStock";
 import AdminPage from "@/react-app/pages/Admin";
-import AccessGate from "@/react-app/pages/AccessGate";
 import Login from "@/react-app/pages/Login";
 import { isSupabaseConfigured } from "@/react-app/lib/supabase";
 import { AuthProvider, useAuth } from "@/react-app/context/AuthContext";
@@ -25,8 +24,8 @@ function ProtectedRoute({ children }: { children: JSX.Element }) {
   }
 
   if (!session) {
-    // Redirect to Access Gate if not logged in
-    return <Navigate to="/access-gate" state={{ from: location }} replace />;
+    // Redirect direct to Login (No Access Gate)
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return children;
@@ -92,7 +91,6 @@ export default function App() {
       <AuthProvider>
         <Routes>
           {/* Public Routes */}
-          <Route path="/access-gate" element={<AccessGate />} />
           <Route path="/login" element={<Login />} />
 
           {/* Protected Routes */}
@@ -112,8 +110,8 @@ export default function App() {
             <Route path="admin" element={<AdminPage />} />
           </Route>
 
-          {/* Catch all redirect to access gate */}
-          <Route path="*" element={<Navigate to="/access-gate" replace />} />
+          {/* Catch all redirect to login */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </AuthProvider>
     </Router>

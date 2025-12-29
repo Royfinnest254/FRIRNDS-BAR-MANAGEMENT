@@ -7,6 +7,7 @@ interface AuthContextType {
     user: User | null;
     role: "admin" | "staff" | "viewer" | null;
     loading: boolean;
+    error: string | null;  // NEW: Expose error
     signOut: () => Promise<void>;
 }
 
@@ -15,6 +16,7 @@ const AuthContext = createContext<AuthContextType>({
     user: null,
     role: null,
     loading: true,
+    error: null,
     signOut: async () => { },
 });
 
@@ -23,6 +25,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [role, setRole] = useState<"admin" | "staff" | "viewer" | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         // 1. Get initial session
@@ -41,6 +44,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 fetchUserRole(session.user.id);
             } else {
                 setRole(null);
+                setError(null);
                 setLoading(false);
             }
         });
@@ -49,17 +53,36 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }, []);
 
     const fetchUserRole = async (userId: string) => {
+        setError(null);
         try {
-            const { data, error } = await supabase
+            console.log("🔍 Fetching role from PROFILES for:", userId);
+
+            // STANDARD MODEL: Single query to profiles
+            const { data, error: fetchError } = await supabase
                 .from("profiles")
                 .select("role")
                 .eq("id", userId)
                 .single();
 
-            if (error) throw error;
-            setRole(data?.role as any);
-        } catch (err) {
-            console.error("Error fetching role:", err);
+            if (fetchError) {
+                console.warn("⚠️ Profile fetch error:", fetchError);
+                setError(fetchError.message + " (" + fetchError.code + ")");
+                setRole(null);
+                return;
+            }
+
+            if (data?.role) {
+                console.log("✅ Role verified:", data.role);
+                setRole(data.role as "admin" | "staff" | "viewer");
+            } else {
+                console.warn("⚠️ Profile exists but has no role?");
+                setError("Profile missing role");
+                setRole(null);
+            }
+        } catch (err: any) {
+            console.error("Critical Auth Error:", err);
+            setError(err.message || "Unknown Error");
+            setRole(null);
         } finally {
             setLoading(false);
         }
@@ -68,10 +91,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const signOut = async () => {
         await supabase.auth.signOut();
         setRole(null);
+        setError(null);
     };
 
     return (
-        <AuthContext.Provider value={{ session, user, role, loading, signOut }}>
+        <AuthContext.Provider value={{ session, user, role, loading, error, signOut }}>
             {children}
         </AuthContext.Provider>
     );

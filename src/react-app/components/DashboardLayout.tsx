@@ -12,16 +12,17 @@ import { useAuth } from "@/react-app/context/AuthContext";
 import { LogOut } from "lucide-react";
 
 export default function DashboardLayout() {
-  const { role, signOut } = useAuth();
+  const { user, role, signOut } = useAuth(); // Add 'user' here
 
   const allNavItems = [
     { to: "/", icon: Home, label: "Dashboard", roles: ["admin", "staff", "viewer"] },
     { to: "/daily-stock", icon: ClipboardList, label: "Daily Stock", roles: ["admin", "staff"] },
     { to: "/inventory", icon: Package, label: "Inventory", roles: ["admin", "staff", "viewer"] },
     { to: "/sales", icon: ShoppingCart, label: "Sales", roles: ["admin", "staff"] },
-    { to: "/reports", icon: BarChart3, label: "Reports", roles: ["admin", "viewer"] },
+    { to: "/reports", icon: BarChart3, label: "Reports", roles: ["admin"] },
   ];
 
+  // FILTER: Only show items allowed for current role
   const visibleNavItems = allNavItems.filter(item =>
     role && item.roles.includes(role)
   );
@@ -68,12 +69,13 @@ export default function DashboardLayout() {
                 <NavLink
                   to="/admin"
                   className={({ isActive }) =>
-                    `p-2 rounded-full transition-colors ${isActive ? "bg-white/10 text-white" : "text-white/70 hover:text-white hover:bg-white/5"
+                    `flex items-center gap-2 px-3 py-2 rounded-full transition-colors ${isActive ? "bg-white/10 text-white" : "text-white/70 hover:text-white hover:bg-white/5"
                     }`
                   }
                   title="Admin Settings"
                 >
                   <Settings className="w-5 h-5" />
+                  <span className="font-bold text-xs bg-red-500 px-1.5 py-0.5 rounded text-white">ADMIN</span>
                 </NavLink>
               )}
 
