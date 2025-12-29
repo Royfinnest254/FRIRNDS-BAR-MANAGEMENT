@@ -279,7 +279,7 @@ export default function AdminPage() {
             <tbody className="divide-y divide-white/5">
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-6 py-4 text-white font-medium">{u.email}</td>
+                  <td className="px-6 py-4 text-gray-900 font-medium">{u.email}</td>
 
                   {/* Role Column */}
                   <td className="px-6 py-4">
