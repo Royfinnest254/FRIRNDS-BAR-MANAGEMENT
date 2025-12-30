@@ -1,504 +1,388 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Download } from "lucide-react";
+import { Plus, Lock, Save, Search, AlertCircle, Calendar } from "lucide-react";
 import { supabase } from "@/react-app/lib/supabase";
+import { useAuth } from "@/react-app/context/AuthContext";
 import type { Database } from "@/react-app/types/supabase";
 
-type DailyStockRecord = Database["public"]["Tables"]["daily_stock_records"]["Row"];
-type InsertDailyStockRecord = Database["public"]["Tables"]["daily_stock_records"]["Insert"];
+type DailyStockjoined = Database["public"]["Tables"]["daily_stock_records"]["Row"] & {
+  products: Database["public"]["Tables"]["products"]["Row"];
+};
 
 export default function DailyStockPage() {
-  const [records, setRecords] = useState<DailyStockRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const { role } = useAuth();
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [formData, setFormData] = useState({
-    item_name: "",
-    open_stock: 0,
-    added_stock: 0,
-    closing_stock: 0,
-    price: 0,
-    profit_margin: null as number | null,
-    sales_person: "",
-  });
+  const [records, setRecords] = useState<DailyStockjoined[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [status, setStatus] = useState<"draft" | "published" | "empty">("empty");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchRecords();
-  }, []);
+    fetchDailyStock();
+  }, [selectedDate]);
 
-  const fetchRecords = async () => {
+  const fetchDailyStock = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from("daily_stock_records")
-        .select("*")
-        .order("date", { ascending: false });
+        .select(`
+          *,
+          products (
+            id,
+            name,
+            selling_price,
+            category
+          )
+        `)
+        .eq("date", selectedDate)
+        .order("created_at", { ascending: true });
 
       if (error) throw error;
-      setRecords(data || []);
+
+      if (!data || data.length === 0) {
+        setStatus("empty");
+        setRecords([]);
+      } else {
+        // @ts-ignore - Supabase types join complexity
+        setRecords(data);
+        // @ts-ignore
+        setStatus(data[0].status);
+      }
     } catch (error) {
-      console.error("Error fetching records:", error);
+      console.error("Error fetching stock:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const initializeDailyStock = async () => {
+    if (role !== "admin" && role !== "staff") {
+      alert("Only staff or admin can start the day.");
+      return;
+    }
 
+    setIsSubmitting(true);
     try {
-      // Calculate daily sale amount
-      const open = Number(formData.open_stock);
-      const added = Number(formData.added_stock);
-      const closing = Number(formData.closing_stock);
-      const price = Number(formData.price);
+      // 1. Fetch all active products
+      const { data: products, error: prodError } = await supabase
+        .from("products")
+        .select("*")
+        .eq("active", true);
 
-      const dailySaleAmount = (open + added - closing) * price;
+      if (prodError) throw prodError;
 
-      const newRecord: InsertDailyStockRecord = {
+      // 2. Fetch current inventory levels for opening stock
+      const { data: inventory, error: invError } = await supabase
+        .from("inventory")
+        .select("product_id, quantity");
+
+      if (invError) throw invError;
+
+      // Map inventory for quick lookup
+      const invMap = new Map(inventory?.map((i) => [i.product_id, i.quantity]));
+
+      // 3. Prepare new records
+      const newRecords = products?.map((product) => ({
         date: selectedDate,
-        item_name: formData.item_name,
-        open_stock: open,
-        added_stock: added,
-        closing_stock: closing,
-        price: price,
-        profit_margin: formData.profit_margin ? Number(formData.profit_margin) : null,
-        daily_sale_amount: dailySaleAmount,
-        sales_person: formData.sales_person || null,
-      };
-
-      const { error } = await supabase
-        .from("daily_stock_records")
-        .insert(newRecord as any);
-
-      if (error) throw error;
-
-      setFormData({
-        item_name: "",
-        open_stock: 0,
+        product_id: product.id,
+        opening_stock: invMap.get(product.id) || 0,
         added_stock: 0,
-        closing_stock: 0,
-        price: 0,
-        profit_margin: null,
-        sales_person: "",
-      });
-      setShowForm(false);
-      fetchRecords();
+        closing_stock: 0, // Default to 0, needs entry
+        status: "draft",
+      }));
+
+      if (!newRecords || newRecords.length === 0) {
+        alert("No products found in master list.");
+        return;
+      }
+
+      // 4. Insert all
+      const { error: insertError } = await supabase
+        .from("daily_stock_records")
+        .insert(newRecords as any);
+
+      if (insertError) throw insertError;
+
+      await fetchDailyStock();
     } catch (error: any) {
-      console.error("Error saving record:", error);
-      alert("Failed to save record: " + (error.message || JSON.stringify(error)));
+      console.error("Error starting day:", error);
+      alert("Failed to start day: " + error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this record?")) return;
+  const handleUpdate = async (
+    id: string,
+    field: "opening_stock" | "added_stock" | "closing_stock",
+    value: string
+  ) => {
+    if (status === "published") return; // Double check safety
 
+    const numValue = parseInt(value) || 0;
+
+    // Optimiztically update UI
+    const updatedRecords = records.map((r) => {
+      if (r.id === id) {
+        return { ...r, [field]: numValue };
+      }
+      return r;
+    });
+    setRecords(updatedRecords);
+
+    // Send update to DB (Debounce could be added here for perf)
     try {
       const { error } = await supabase
         .from("daily_stock_records")
-        .delete()
+        .update({ [field]: numValue })
         .eq("id", id);
 
       if (error) throw error;
-      fetchRecords();
     } catch (error) {
-      console.error("Error deleting record:", error);
-      alert("Failed to delete record");
+      console.error("Error updating record:", error);
+      // Revert on error? For now just log.
     }
   };
 
-  const exportCSV = () => {
-    const headers = [
-      "Date",
-      "Item",
-      "Open Stock",
-      "Added Stock",
-      "Total Stock",
-      "Closing Stock",
-      "Price (KSh)",
-      "Daily Sale (KSh)",
-      "Profit Margin",
-      "Sales Person",
-    ];
+  const publishStock = async () => {
+    if (role !== "admin") {
+      alert("Only ADMIN can publish daily stock.");
+      return;
+    }
 
-    const rows = records.map((record) => [
-      record.date,
-      record.item_name,
-      record.open_stock.toString(),
-      record.added_stock.toString(),
-      (record.open_stock + record.added_stock).toString(),
-      record.closing_stock.toString(),
-      record.price.toFixed(2),
-      record.daily_sale_amount.toFixed(2),
-      record.profit_margin?.toFixed(2) || "N/A",
-      record.sales_person || "N/A",
-    ]);
+    if (!confirm("Are you sure? This will LOCK the day and UPDATE Inventory forever.")) return;
 
-    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `daily-stock-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    setIsSubmitting(true);
+    try {
+      // We will do this via client-side logical loop if the RPC fails, 
+      // BUT ideally we use a transaction logic. 
+      // Since we removed the RPC to fix your SQL runner, we do it here safely.
+
+      // 1. Update Inventory for each item
+      for (const record of records) {
+        const { error: invErr } = await supabase
+          .from('inventory')
+          .update({
+            quantity: record.closing_stock,
+            updated_at: new Date().toISOString()
+          })
+          .eq('product_id', record.product_id);
+
+        if (invErr) {
+          console.error("Failed to update inventory for", record.products.name);
+          throw invErr;
+        }
+      }
+
+      // 2. Lock all records
+      const { error: lockErr } = await supabase
+        .from('daily_stock_records')
+        .update({ status: 'published' })
+        .eq('date', selectedDate);
+
+      if (lockErr) throw lockErr;
+
+      setStatus('published');
+      alert("Day Published Successfully! Inventory Updated.");
+
+    } catch (error: any) {
+      console.error("Error publishing:", error);
+      alert("Failed to publish: " + error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const totalStock = formData.open_stock + formData.added_stock;
-  const dailySale = (totalStock - formData.closing_stock) * formData.price;
+  // Calculations
+  const calculateRow = (record: DailyStockjoined) => {
+    const totalStock = record.opening_stock + record.added_stock;
+    const salesCount = totalStock - record.closing_stock;
+    const salesAmount = salesCount * record.products.selling_price;
+    return { totalStock, salesCount, salesAmount };
+  };
 
-  const groupedRecords = records.reduce((acc, record) => {
-    if (!acc[record.date]) {
-      acc[record.date] = [];
-    }
-    acc[record.date].push(record);
-    return acc;
-  }, {} as Record<string, DailyStockRecord[]>);
+  const filteredRecords = records.filter(r =>
+    r.products.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
-      </div>
-    );
-  }
+  const grandTotal = records.reduce((acc, curr) => acc + calculateRow(curr).salesAmount, 0);
+
+  if (loading) return <div className="p-8 text-center">Loading stock sheet...</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-heading font-bold text-header">Daily Stock Recording</h2>
-          <p className="text-sm text-yellow-700 mt-1">
-            Track daily stock movements and sales
-          </p>
-        </div>
-        <div className="flex space-x-3">
-          <button
-            onClick={exportCSV}
-            className="flex items-center space-x-2 bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition-all shadow-sm text-sm font-medium"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export CSV</span>
-          </button>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center space-x-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-all shadow-sm text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Entry</span>
-          </button>
-        </div>
-      </div>
-
-      {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">
-            New Stock Entry
-          </h3>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Item Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.item_name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, item_name: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-gray-900"
-                  placeholder="e.g., Tusker Lager"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Open Stock
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  value={formData.open_stock}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      open_stock: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Added Stock
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  value={formData.added_stock}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      added_stock: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Closing Stock
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  value={formData.closing_stock}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      closing_stock: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Price (KSh)
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  step="0.01"
-                  value={formData.price}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      price: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Profit Margin (Optional)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.profit_margin || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      profit_margin: e.target.value
-                        ? parseFloat(e.target.value)
-                        : null,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Sales Person
-                </label>
-                <input
-                  type="text"
-                  value={formData.sales_person}
-                  onChange={(e) =>
-                    setFormData({ ...formData, sales_person: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-gray-900"
-                  placeholder="e.g., John Doe"
-                />
-              </div>
-            </div>
-
-            <div className="bg-orange-50 rounded-lg p-4 border border-orange-100">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <span className="text-gray-600">Total Stock:</span>
-                  <span className="font-semibold text-gray-900 ml-2">
-                    {totalStock} units
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Daily Sale Amount:</span>
-                  <span className="font-semibold text-gray-900 ml-2">
-                    KSh {dailySale.toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex space-x-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all shadow-sm font-medium text-sm"
-              >
-                Save Entry
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <div className="space-y-6">
-        {Object.entries(groupedRecords)
-          .sort((a, b) => b[0].localeCompare(a[0]))
-          .map(([date, dateRecords]) => {
-            const totalDailySales = dateRecords.reduce(
-              (sum, r) => sum + r.daily_sale_amount,
-              0
-            );
-
-            return (
-              <div
-                key={date}
-                className="bg-white rounded-xl shadow-sm border border-border/50 overflow-hidden"
-              >
-                <div className="bg-orange-50/50 px-6 py-4 border-b border-orange-100">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-header">{date}</h3>
-                    <span className="text-sm font-semibold text-primary">
-                      Total: KSh {totalDailySales.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50/50 border-b border-gray-100">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Item
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Open
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Added
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Total
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Closing
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Price
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Sale Amount
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Profit
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
-                          Sales Person
-                        </th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {dateRecords.map((record) => (
-                        <tr key={record.id} className="hover:bg-gray-50/50">
-                          <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                            {record.item_name}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {record.open_stock}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {record.added_stock}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                            {record.open_stock + record.added_stock}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {record.closing_stock}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {record.price.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-primary font-medium">
-                            KSh {record.daily_sale_amount.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {record.profit_margin?.toFixed(2) || "N/A"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {record.sales_person || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              onClick={() => handleDelete(record.id)}
-                              className="text-red-400 hover:text-red-600 transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })}
-
-        {records.length === 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No records yet
-            </h3>
-            <p className="text-gray-500 mb-6">
-              Start by adding your first daily stock entry
-            </p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-all shadow-sm text-sm font-medium"
-            >
-              Add First Entry
-            </button>
+    <div className="space-y-6 max-w-7xl mx-auto pb-20">
+      {/* Header Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="bg-primary/10 p-3 rounded-lg text-primary">
+            <Calendar className="w-6 h-6" />
           </div>
-        )}
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Viewing Date</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="font-mono text-lg font-bold bg-transparent outline-none text-gray-900"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {status === 'draft' && (
+            <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-full border border-yellow-200 uppercase tracking-wide flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+              Draft Mode
+            </span>
+          )}
+          {status === 'published' && (
+            <span className="px-3 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full border border-green-200 uppercase tracking-wide flex items-center gap-2">
+              <Lock className="w-3 h-3" />
+              Locked
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* Main Content */}
+      {status === 'empty' ? (
+        <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
+          <div className="mb-4 flex justify-center">
+            <div className="bg-gray-50 p-4 rounded-full">
+              <AlertCircle className="w-12 h-12 text-gray-400" />
+            </div>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">No Records for {selectedDate}</h2>
+          <p className="text-gray-500 mb-8 max-w-md mx-auto">The daily stock sheet has not been initialized for this date yet.</p>
+          <button
+            onClick={initializeDailyStock}
+            disabled={isSubmitting}
+            className="bg-primary text-white px-6 py-3 rounded-lg font-bold shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50"
+          >
+            {isSubmitting ? 'Starting Day...' : 'Start Day & Initialize Sheet'}
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Toolbar */}
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="relative w-full md:w-96">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+              />
+            </div>
+
+            {status === 'draft' && role === 'admin' && (
+              <button
+                onClick={publishStock}
+                disabled={isSubmitting}
+                className="w-full md:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                <Lock className="w-4 h-4" />
+                {isSubmitting ? 'Publishing...' : 'Publish & Lock Day'}
+              </button>
+            )}
+          </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-4 py-3 text-left font-bold text-gray-700 uppercase tracking-wider w-64">Product</th>
+                    <th className="px-4 py-3 text-center font-bold text-gray-600 uppercase tracking-wider bg-blue-50/50">Open</th>
+                    <th className="px-4 py-3 text-center font-bold text-gray-600 uppercase tracking-wider bg-green-50/50">Added</th>
+                    <th className="px-4 py-3 text-center font-bold text-gray-600 uppercase tracking-wider">Total</th>
+                    <th className="px-4 py-3 text-center font-bold text-gray-600 uppercase tracking-wider bg-red-50/50">Closing</th>
+                    <th className="px-4 py-3 text-center font-bold text-gray-600 uppercase tracking-wider">Sales</th>
+                    <th className="px-4 py-3 text-right font-bold text-gray-600 uppercase tracking-wider">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredRecords.map((record) => {
+                    const { totalStock, salesCount, salesAmount } = calculateRow(record);
+                    const isDraft = status === 'draft';
+
+                    return (
+                      <tr key={record.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-gray-900 border-r border-gray-100">
+                          {record.products.name}
+                          <div className="text-xs text-gray-400 font-normal mt-0.5">KSh {record.products.selling_price}</div>
+                        </td>
+
+                        {/* Opening Stock */}
+                        <td className="px-2 py-2 bg-blue-50/20 text-center">
+                          <input
+                            type="number"
+                            disabled={!isDraft}
+                            value={record.opening_stock}
+                            onChange={(e) => handleUpdate(record.id, 'opening_stock', e.target.value)}
+                            className="w-20 text-center bg-transparent border border-transparent hover:border-blue-200 focus:border-blue-500 focus:bg-white rounded px-1 py-1 outline-none transition-all disabled:text-gray-500"
+                          />
+                        </td>
+
+                        {/* Added Stock */}
+                        <td className="px-2 py-2 bg-green-50/20 text-center">
+                          <input
+                            type="number"
+                            disabled={!isDraft}
+                            value={record.added_stock}
+                            onChange={(e) => handleUpdate(record.id, 'added_stock', e.target.value)}
+                            className="w-20 text-center bg-transparent border border-transparent hover:border-green-200 focus:border-green-500 focus:bg-white rounded px-1 py-1 outline-none transition-all disabled:text-gray-500"
+                          />
+                        </td>
+
+                        {/* Total (Calculated) */}
+                        <td className="px-4 py-3 text-center font-medium text-gray-600 bg-gray-50/30">
+                          {totalStock}
+                        </td>
+
+                        {/* Closing Stock */}
+                        <td className="px-2 py-2 bg-red-50/20 text-center border-l border-r border-gray-100">
+                          <input
+                            type="number"
+                            disabled={!isDraft}
+                            value={record.closing_stock}
+                            onChange={(e) => handleUpdate(record.id, 'closing_stock', e.target.value)}
+                            className="w-20 text-center font-bold text-gray-900 bg-transparent border border-transparent hover:border-red-200 focus:border-red-500 focus:bg-white rounded px-1 py-1 outline-none transition-all disabled:text-gray-500"
+                          />
+                        </td>
+
+                        {/* Sold Count (Calculated) */}
+                        <td className="px-4 py-3 text-center text-gray-900 font-bold bg-gray-50/30">
+                          {salesCount}
+                        </td>
+
+                        {/* Revenue (Calculated) */}
+                        <td className="px-4 py-3 text-right font-mono font-medium text-primary">
+                          {salesAmount.toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t border-gray-200">
+                  <tr>
+                    <td colSpan={6} className="px-4 py-4 text-right font-bold text-gray-700 uppercase">Total Daily Revenue</td>
+                    <td className="px-4 py-4 text-right font-bold text-xl text-primary font-mono border-t-2 border-primary">
+                      KSh {grandTotal.toLocaleString()}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

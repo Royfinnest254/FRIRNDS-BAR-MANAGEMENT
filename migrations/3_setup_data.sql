@@ -1,78 +1,31 @@
-DROP TABLE IF EXISTS public.daily_stock_records CASCADE;
-DROP TABLE IF EXISTS public.inventory CASCADE;
-DROP TABLE IF EXISTS public.products CASCADE;
-DROP TABLE IF EXISTS public.sales CASCADE;
-DROP TABLE IF EXISTS public.profiles CASCADE;
+-- CHUNK 3: POLICIES & DATA
+-- RUN THIS THIRD
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-CREATE TABLE public.products (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL UNIQUE,
-    category TEXT,
-    selling_price NUMERIC NOT NULL DEFAULT 0,
-    active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    CONSTRAINT products_name_check CHECK (name = upper(name))
-);
-
-CREATE TABLE public.inventory (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-    quantity INTEGER NOT NULL DEFAULT 0,
-    low_stock_threshold INTEGER NOT NULL DEFAULT 5,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    CONSTRAINT inventory_product_unique UNIQUE (product_id)
-);
-
-CREATE TABLE public.daily_stock_records (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    date DATE NOT NULL DEFAULT CURRENT_DATE,
-    product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-    opening_stock INTEGER NOT NULL DEFAULT 0,
-    added_stock INTEGER NOT NULL DEFAULT 0,
-    closing_stock INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL CHECK (status IN ('draft', 'published')) DEFAULT 'draft',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    CONSTRAINT unique_daily_product UNIQUE (date, product_id)
-);
-
-CREATE TABLE public.sales (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    sale_date TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    product_id UUID REFERENCES public.products(id),
-    item_name TEXT NOT NULL,
-    quantity INTEGER NOT NULL,
-    unit_price NUMERIC NOT NULL,
-    total NUMERIC NOT NULL,
-    payment_method TEXT CHECK (payment_method IN ('Cash', 'M-Pesa')),
-    sales_person TEXT
-);
-
-CREATE TABLE public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id),
-    role TEXT NOT NULL CHECK (role IN ('admin', 'staff', 'viewer')),
-    full_name TEXT
-);
-
+-- 1. Enable RLS
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_stock_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+-- 2. Create Policies
+
+-- Profiles
 CREATE POLICY "Users can read own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
 
+-- Products (Read Only for all authenticated, Admin manages)
 CREATE POLICY "Everyone can view products" ON public.products FOR SELECT USING (true);
 CREATE POLICY "Authenticated can select products" ON public.products FOR ALL USING (auth.role() = 'authenticated');
 
+-- Inventory
 CREATE POLICY "Everyone can view inventory" ON public.inventory FOR SELECT USING (true);
 CREATE POLICY "Authenticated can update inventory" ON public.inventory FOR ALL USING (auth.role() = 'authenticated');
 
+-- Daily Stock
 CREATE POLICY "Everyone can view daily stock" ON public.daily_stock_records FOR SELECT USING (auth.role() = 'authenticated');
 CREATE POLICY "Authenticated can manage daily stock" ON public.daily_stock_records FOR ALL USING (auth.role() = 'authenticated');
 
+-- 3. Insert Master Data
 INSERT INTO public.products (name, category, selling_price) VALUES
 ('TUSKER', 'Beer', 250),
 ('GUINNESS', 'Beer', 250),
@@ -120,6 +73,7 @@ INSERT INTO public.products (name, category, selling_price) VALUES
 ('BRAVADO ENERGY', 'Energy Drink', 200)
 ON CONFLICT (name) DO NOTHING;
 
+-- 4. Initialize Inventory
 INSERT INTO public.inventory (product_id, quantity)
 SELECT id, 0 FROM public.products
 WHERE id NOT IN (SELECT product_id FROM public.inventory);

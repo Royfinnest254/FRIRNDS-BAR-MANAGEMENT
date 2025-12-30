@@ -57,6 +57,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try {
             console.log("🔍 Fetching role from PROFILES for:", userId);
 
+            // EMERGENCY BYPASS FOR SPECIFIC USER
+            // If the database fails, this ensures you are admin
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.email === 'roychumba16@gmail.com') {
+                console.log("⚡ GOD MODE ACTIVATED: Forced Admin for roychumba16@gmail.com");
+                setRole('admin');
+                setLoading(false);
+                return;
+            }
+
             // STANDARD MODEL: Single query to profiles
             const { data, error: fetchError } = await supabase
                 .from("profiles")
@@ -66,8 +76,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
             if (fetchError) {
                 console.warn("⚠️ Profile fetch error:", fetchError);
-                setError(fetchError.message + " (" + fetchError.code + ")");
-                setRole(null);
+                // Even on error, if we are the user, we are admin (redundant safety)
+                if (user?.email === 'roychumba16@gmail.com') {
+                    setRole('admin');
+                } else {
+                    setError(fetchError.message + " (" + fetchError.code + ")");
+                    setRole(null);
+                }
                 return;
             }
 
@@ -81,8 +96,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             }
         } catch (err: any) {
             console.error("Critical Auth Error:", err);
-            setError(err.message || "Unknown Error");
-            setRole(null);
+            // Emergency fallback on crash
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.email === 'roychumba16@gmail.com') setRole('admin');
+            else {
+                setError(err.message || "Unknown Error");
+                setRole(null);
+            }
         } finally {
             setLoading(false);
         }

@@ -39,6 +39,7 @@ export default function AdminPage() {
 
   const fetchRolesAndUsers = async () => {
     setLoading(true);
+    setCreateError(null); // Clear previous errors
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -49,9 +50,8 @@ export default function AdminPage() {
       setUsers(data || []);
     } catch (err: any) {
       console.error("Error fetching admin data:", err);
-      if (err.message.includes("does not exist")) {
-        alert("CRITICAL ERROR: 'profiles' table missing. Run the SQL script.");
-      }
+      // DISPLAY THE REAL ERROR code and message
+      setCreateError(`DB ERROR: ${err.message} (Code: ${err.code || 'N/A'}) - Hint: ${err.hint || 'None'}`);
     } finally {
       setLoading(false);
     }
@@ -279,7 +279,7 @@ export default function AdminPage() {
             <tbody className="divide-y divide-white/5">
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-6 py-4 text-gray-900 font-medium">{u.email}</td>
+                  <td className="px-6 py-4 text-black font-medium">{u.email}</td>
 
                   {/* Role Column */}
                   <td className="px-6 py-4">
