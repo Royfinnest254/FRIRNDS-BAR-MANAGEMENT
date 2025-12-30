@@ -183,9 +183,9 @@ export default function AdminPage() {
         <div>
           <div className="flex items-center space-x-3 mb-2">
             <Shield className="w-8 h-8 text-primary" />
-            <h2 className="text-3xl font-bold font-heading text-white">Admin Dashboard</h2>
+            <h2 className="text-3xl font-bold font-heading text-gray-900">Admin Dashboard</h2>
           </div>
-          <p className="text-text_secondary">Manage user access and permissions.</p>
+          <p className="text-gray-600">Manage user access and permissions.</p>
         </div>
         <button
           onClick={() => setIsCreating(!isCreating)}
@@ -198,40 +198,40 @@ export default function AdminPage() {
 
       {/* CREATE USER FORM */}
       {isCreating && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-6 animate-in slide-in-from-top-4">
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <UserPlus className="w-5 h-5 text-green-400" />
+        <div className="bg-white border border-gray-200 rounded-xl p-6 animate-in slide-in-from-top-4 shadow-lg">
+          <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-green-600" />
             Create New User
           </h3>
 
           <form onSubmit={createNewUser} className="space-y-4 max-w-lg">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Email</label>
+              <label className="block text-sm text-gray-700 mb-1">Email</label>
               <input
                 type="email"
                 required
-                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-primary outline-none"
+                className="w-full bg-white border border-gray-300 rounded p-2 text-gray-900 focus:border-primary outline-none focus:ring-2 focus:ring-primary/20"
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
                 placeholder="newuser@example.com"
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Password</label>
+              <label className="block text-sm text-gray-700 mb-1">Password</label>
               <input
                 type="password"
                 required
                 minLength={6}
-                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-primary outline-none"
+                className="w-full bg-white border border-gray-300 rounded p-2 text-gray-900 focus:border-primary outline-none focus:ring-2 focus:ring-primary/20"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Min 6 characters"
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Initial Role</label>
+              <label className="block text-sm text-gray-700 mb-1">Initial Role</label>
               <select
-                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-primary outline-none"
+                className="w-full bg-white border border-gray-300 rounded p-2 text-gray-900 focus:border-primary outline-none focus:ring-2 focus:ring-primary/20"
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
               >
@@ -242,14 +242,14 @@ export default function AdminPage() {
             </div>
 
             {createError && (
-              <div className="p-3 bg-red-500/20 border border-red-500/50 rounded text-red-200 text-sm">
+              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
                 ⚠️ Error: {createError}
               </div>
             )}
 
             <button
               type="submit"
-              className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg transition-colors"
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg transition-colors shadow-md"
             >
               Create User & Set Role
             </button>
@@ -258,28 +258,28 @@ export default function AdminPage() {
       )}
 
       {/* User Management Table */}
-      <div className="glass-card rounded-xl p-6">
+      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
             <Users className="w-6 h-6 text-primary" />
-            <h3 className="text-xl font-bold text-white">Existing Users</h3>
+            <h3 className="text-xl font-bold text-gray-900">Existing Users</h3>
           </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-white/5 border-b border-white/10">
+            <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-text_secondary">Email</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-text_secondary">Role</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-text_secondary">Joined</th>
-                <th className="px-6 py-4 text-right text-sm font-semibold text-text_secondary">Actions</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-900">Email</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-900">Role</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-900">Joined</th>
+                <th className="px-6 py-4 text-right text-sm font-bold text-gray-900">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-gray-100">
               {users.map((u) => (
-                <tr key={u.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-6 py-4 text-black font-medium">{u.email}</td>
+                <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-4 text-black font-medium">{u.email || "No Email"}</td>
 
                   {/* Role Column */}
                   <td className="px-6 py-4">
@@ -287,7 +287,7 @@ export default function AdminPage() {
                       <select
                         value={selectedRole}
                         onChange={(e) => setSelectedRole(e.target.value)}
-                        className="bg-gray-800 text-white border border-gray-600 rounded px-2 py-1 text-sm outline-none focus:border-primary"
+                        className="bg-white text-gray-900 border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-primary"
                       >
                         <option value="admin">ADMIN</option>
                         <option value="staff">STAFF</option>
@@ -296,10 +296,10 @@ export default function AdminPage() {
                     ) : (
                       <span
                         className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${u.role === "admin"
-                          ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                          ? "bg-purple-100 text-purple-700 border border-purple-200"
                           : u.role === "staff"
-                            ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                            : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
+                            ? "bg-blue-100 text-blue-700 border border-blue-200"
+                            : "bg-gray-100 text-gray-700 border border-gray-200"
                           }`}
                       >
                         {u.role}
@@ -307,8 +307,8 @@ export default function AdminPage() {
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-text_secondary text-sm">
-                    {new Date(u.created_at).toLocaleDateString()}
+                  <td className="px-6 py-4 text-gray-600 text-sm">
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
                   </td>
 
                   {/* Actions Column */}
