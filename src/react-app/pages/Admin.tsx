@@ -317,28 +317,51 @@ export default function AdminPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => saveRole(u.id)}
-                          className="p-1.5 text-green-400 hover:bg-green-400/10 rounded transition-colors"
+                          className="p-1.5 text-green-600 hover:bg-green-100 rounded transition-colors"
                           title="Save Changes"
                         >
                           <Save className="w-4 h-4" />
                         </button>
                         <button
                           onClick={cancelEditing}
-                          className="p-1.5 text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                          className="p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors"
                           title="Cancel"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => startEditing(u)}
-                        disabled={u.id === currentUser?.id}
-                        className={`text-sm font-medium hover:underline ${u.id === currentUser?.id ? "text-gray-600 cursor-not-allowed" : "text-primary cursor-pointer"
-                          }`}
-                      >
-                        {u.id === currentUser?.id ? "Me" : "Edit Role"}
-                      </button>
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => startEditing(u)}
+                          disabled={u.id === currentUser?.id}
+                          className={`text-sm font-medium hover:underline ${u.id === currentUser?.id ? "text-gray-400 cursor-not-allowed" : "text-primary cursor-pointer"
+                            }`}
+                        >
+                          {u.id === currentUser?.id ? "Me" : "Edit Role"}
+                        </button>
+
+                        {u.id !== currentUser?.id && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Are you sure you want to PERMANENTLY delete  ${u.email || 'this user'}?`)) return;
+                              try {
+                                const { error } = await supabase.rpc('delete_user', { target_user_id: u.id });
+                                if (error) throw error;
+                                alert("User deleted successfully.");
+                                fetchRolesAndUsers();
+                              } catch (err: any) {
+                                console.error("Delete failed:", err);
+                                alert("Failed to delete: " + err.message);
+                              }
+                            }}
+                            className="text-sm font-bold text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded transition-colors"
+                            title="Terminate User"
+                          >
+                            Terminate
+                          </button>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
