@@ -74,36 +74,43 @@ ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_stock_records ENABLE ROW LEVEL SECURITY;
 
+-- RLS HELPER FUNCTIONS
+-- This function is SECURITY DEFINER to avoid infinite recursion
+CREATE OR REPLACE FUNCTION public.get_my_role()
+RETURNS text AS $$
+    SELECT role FROM public.profiles WHERE id = auth.uid();
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
+
 -- RLS POLICIES
 
 -- Profiles: Users can read their own profile, Admins can read all
 CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Admins can manage all profiles" ON public.profiles FOR ALL USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+    public.get_my_role() = 'admin'
 );
 
 -- Products: Everyone authenticated can view, only staff/admin can modify
 CREATE POLICY "Authenticated can view products" ON public.products FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Staff/Admins can modify products" ON public.products FOR ALL TO authenticated USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin', 'staff'))
+    public.get_my_role() IN ('admin', 'staff')
 );
 
 -- Inventory: Same as products
 CREATE POLICY "Authenticated can view inventory" ON public.inventory FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Staff/Admins can modify inventory" ON public.inventory FOR ALL TO authenticated USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin', 'staff'))
+    public.get_my_role() IN ('admin', 'staff')
 );
 
 -- Sales: Authenticated can view and insert, admins can delete
 CREATE POLICY "Authenticated can view sales" ON public.sales FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Authenticated can record sales" ON public.sales FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "Admins can manage sales" ON public.sales FOR ALL TO authenticated USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+    public.get_my_role() = 'admin'
 );
 
 -- Daily Stock: Staff/Admins only
 CREATE POLICY "Staff/Admins can manage daily stock" ON public.daily_stock_records FOR ALL TO authenticated USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin', 'staff'))
+    public.get_my_role() IN ('admin', 'staff')
 );
 
 -- TRIGGER FOR AUTOMATED PROFILE CREATION
