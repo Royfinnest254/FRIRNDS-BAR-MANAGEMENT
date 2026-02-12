@@ -1,0 +1,12 @@
+
+CREATE TABLE items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 0,
+  price REAL NOT NULL,
+  low_stock_threshold INTEGER DEFAULT 10,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_items_name ON items(name);
