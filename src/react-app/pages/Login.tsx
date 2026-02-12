@@ -11,6 +11,8 @@ export default function Login() {
     const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
 
+    const [isSignUp, setIsSignUp] = useState(false);
+
     const handleVerifyEmail = (e: React.FormEvent) => {
         e.preventDefault();
         if (!email) {
@@ -34,19 +36,33 @@ export default function Login() {
         setError(null);
 
         try {
-            const { error: authError } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
+            if (isSignUp) {
+                const { error: signUpError } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: {
+                            full_name: email.split('@')[0], // Default name
+                        }
+                    }
+                });
+                if (signUpError) throw signUpError;
+                // Auto-login or show success
+                setError("Account created! Please verify your email if required or try signing in.");
+                setIsSignUp(false);
+                setStep(1);
+            } else {
+                const { error: authError } = await supabase.auth.signInWithPassword({
+                    email,
+                    password,
+                });
 
-            if (authError) throw authError;
-
-            navigate("/");
+                if (authError) throw authError;
+                navigate("/");
+            }
         } catch (err: any) {
-            console.error("Login failed:", err);
-            // If failed, user might want to try email again or just password.
-            // We keep them on step 2 usually, but let's show the specific design error.
-            setError("System Error: Could not verify access. Try again.");
+            console.error("Auth failed:", err);
+            setError(err.message || "System Error: Could not verify access. Try again.");
         } finally {
             setLoading(false);
         }
@@ -140,9 +156,25 @@ export default function Login() {
                             disabled={loading}
                             className="w-full bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all transform active:scale-[0.98] shadow-lg shadow-orange-500/20"
                         >
-                            <span>{loading ? "Verifying..." : (step === 1 ? "Verify Access" : "Sign In")}</span>
+                            <span>{loading ? "Verifying..." : (step === 1 ? "Verify Access" : (isSignUp ? "Create Account" : "Sign In"))}</span>
                             {!loading && <ArrowRight className="w-5 h-5" />}
                         </button>
+
+                        <div className="text-center pt-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsSignUp(!isSignUp);
+                                    setError(null);
+                                    setStep(1);
+                                }}
+                                className="text-sm font-semibold text-[#ea580c] hover:text-[#c2410c] transition-colors"
+                            >
+                                {isSignUp
+                                    ? "Already have an account? Sign In"
+                                    : "Don't have an account? Request Access / Sign Up"}
+                            </button>
+                        </div>
                     </form>
 
                     <p className="mt-8 text-center text-xs text-gray-400 font-medium">
